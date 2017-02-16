@@ -1,2 +1,2 @@
-hellomake: src/asn02.c
-	gcc -Wall -g -o bin/asn02 src/*.c -lrt
+hellomake: src/asn02.cpp
+	g++ -std=c++11 -Wall -g -o bin/asn02 src/*.cpp -pthread
