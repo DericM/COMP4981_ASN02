@@ -1,3 +1,27 @@
+/*------------------------------------------------------------------------------------------------------------------
+-- SOURCE FILE: server.cpp - An application to receive requests from clients and 
+--	send back designated files using a message queue.
+--
+-- PROGRAM: asn02
+--
+-- FUNCTIONS:
+-- void server();
+-- int readRequest(struct myMesg *buf, int msqid);
+-- int readFile(struct myMesg *buf);
+-- int openFile(char *fileName);
+--
+-- DATE: Febuary 16, 2017
+--
+-- DESIGNER: Deric Mccadden
+-- PROGRAMMER: Deric Mccadden
+--
+-- NOTES:
+-- The program will create and monitor a message queue for incomming requests.
+-- The requests will come appended with a pid.
+-- The program will attempt to open the requested files.
+-- The program will then attempt to send the contents of the files back on the message queue with
+--		the priority specified by the pid.
+----------------------------------------------------------------------------------------------------------------------*/
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,29 +38,47 @@
 
 #include <unistd.h>
 
+#include <istream>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+
+#include "mesg.h"
+#include "common.h"
+#include "server.h"
+
+std::ifstream file;
+std::string gfileName;
 
 
-#include "asn02.h"
 
 
+/*--------------------------------------------------------------------------
+-- FUNCTION: The main server loop. This contains the logic for the server.
+-- void server()
+--
+-- DATE: Febuary 16, 2017
+--
+-- AUTHOR: Deric Mccadden
+---------------------------------------------------------------------------*/
 void server() {
 	struct myMesg buf;
 	int msqid;
-
-	//std::thread exitThread(exit_listener, &buf, msqid);
-    //exitThread.detach();
-
     msqid = connect_server();
     
     printf("server: Ready to receive requests.\n");
     while(1) {
-        mesg_recv(&buf, msqid, 0);
+    	buf.mtype = readRequest(&buf, msqid);
         
         if(fork() == 0){
         	printf("server: Request for file \"%s\" from process %lu.\n",
-        									buf.mtext, buf.mtype);
-        	readFile(&buf, buf.mtext);
-        	mesg_send(&buf, msqid);
+        									gfileName.c_str(), buf.mtype);
+        	openFile((char *)gfileName.c_str());
+
+        	while(readFile(&buf)){
+        		mesg_send(&buf, msqid);
+        	}
         	return;
         }
     }	
@@ -45,16 +87,16 @@ void server() {
 }
 
 
-/*
-void exit_listener(struct myMesg *buf, int msqid){
-	std::st
-	while(running){
-		
-	}
-}*/
 
 
-
+/*--------------------------------------------------------------------------
+-- FUNCTION: This creates a message queue for the server and connects to it. 
+-- int connect_server()
+--
+-- DATE: Febuary 16, 2017
+--
+-- AUTHOR: Deric Mccadden
+---------------------------------------------------------------------------*/
 int connect_server(){
 	int msqid;
 	key_t key = generate_key();
@@ -67,48 +109,58 @@ int connect_server(){
 
 
 
-int readFile(struct myMesg *buf, char *fileName) {
-	strtok(fileName, "\n");
+/*--------------------------------------------------------------------------
+-- FUNCTION: Reads a requested filename from stdin. 
+-- int readRequest(struct myMesg *buf, int msqid)
+--
+-- DATE: Febuary 16, 2017
+--
+-- AUTHOR: Deric Mccadden
+---------------------------------------------------------------------------*/
+int readRequest(struct myMesg *buf, int msqid){
+	mesg_recv(buf, msqid, 1);
+	std::string temp(buf->mtext);
+	std::istringstream iss(temp);
+	std::string mtype;
+	iss >> mtype;
+	iss >> gfileName;
+	return std::stoi( mtype );
+}
 
-	char path[1024];
-	snprintf(path, sizeof(path), "%s%s", FILE_DIR, fileName);
 
-	char *buffer = NULL;
-	int string_size, read_size;
-	FILE *handler = fopen(path, "r");
-
-	if (handler)
-	{
-		fseek(handler, 0, SEEK_END);
-		string_size = ftell(handler);
-		rewind(handler);
-
-		buffer = (char*) malloc(sizeof(char) * (string_size + 1) );
-		read_size = fread(buffer, sizeof(char), string_size, handler);
-		buffer[string_size] = '\0';
-
-		if (string_size != read_size)
-		{
-		   free(buffer);
-		   buffer = NULL;
-		   return 0;
-		}
-		else{
-			strncpy(buf->mtext, buffer, sizeof(buf->mtext) - 1); 
-      		buf->mtext[sizeof(buf->mtext) - 1] = '\0';
-		}
-
-		fclose(handler);
-	} 
-	else{
-		printf("Did not find file '%s' in '%s'\n", fileName, FILE_DIR);
-		strcpy(buffer, "File not found");
-		strncpy(buf->mtext, buffer, sizeof(buf->mtext) - 1); 
-      		buf->mtext[sizeof(buf->mtext) - 1] = '\0';
+/*--------------------------------------------------------------------------
+-- FUNCTION: Reads a preselected file in chunks, returns 0 when we reach the end. 
+-- int readFile(struct myMesg *buf)
+--
+-- DATE: Febuary 16, 2017
+--
+-- AUTHOR: Deric Mccadden
+---------------------------------------------------------------------------*/
+int readFile(struct myMesg *buf) {
+	if(file.eof()){
 		return 0;
 	}
+	file.read(buf->mtext, sizeof(buf->mtext) - 1);
 	return 1;
 }
 
 
+/*--------------------------------------------------------------------------
+-- FUNCTION: Opens a file for reading. 
+-- int openFile(char *fileName)
+--
+-- DATE: Febuary 16, 2017
+--
+-- AUTHOR: Deric Mccadden
+---------------------------------------------------------------------------*/
+int openFile(char *fileName) {
+	strtok(fileName, "\n");
+	char path[1024];
+	snprintf(path, sizeof(path), "%s%s", FILE_DIR, fileName);
+	file.open(path);
+	if(!file.is_open()){
+		return 0;
+	}
+	return 1;
+}
 
